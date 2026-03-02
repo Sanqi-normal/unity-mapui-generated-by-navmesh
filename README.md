@@ -41,20 +41,14 @@
 
 ## 安装
 
-1. 将 `MinimapIcon.cs`、`MinimapOverlay.cs`、`MinimapUI.cs`、`NavMeshMapBaker.cs`、`PlayerIconRotator.cs` 以及编辑器脚本 `NavMeshMapBakerEditor.cs` 放入你的 Unity 项目任意文件夹（建议放在 `Scripts/Minimap` 下）。
-2. 确保项目已启用 **Unity AI Navigation** 包（Window → Package Manager → Unity Registry → AI Navigation）。
-3. （可选）在项目中创建 `MinimapTextures` 文件夹用于存放生成的纹理。
+### 直接将unitypackage下载后拖到unity窗口中
+
+文件位置：release/minimap.unitypackage
+
+此包包含了一个极简易的demo场景用于快速了解功能
 
 ---
 
-## 快速开始
-
-1. 在场景中放置一个空物体，挂载 `NavMeshMapBaker`，配置参数并点击 **烘焙地图纹理并保存**。
-2. 创建 UI Canvas，按 [UI 层级结构](#ui-层级结构) 搭建小地图和大地图的 UI 元素。
-3. 在 Canvas 上挂载 `MinimapUI`，拖拽引用 baker、玩家 Transform 以及各 UI 组件。
-4. 为玩家物体添加 `MinimapIcon`（可选，设置玩家图标）和 `PlayerIconRotator`。
-5. 为门 / 窗等物体添加 `MinimapOverlay`，配置预制体和状态 Sprite。
-6. 运行场景，按 Q 键切换小地图 / 大地图。
 
 ---
 
