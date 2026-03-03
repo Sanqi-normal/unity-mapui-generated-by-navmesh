@@ -1,4 +1,4 @@
-﻿using UnityEngine;
+using UnityEngine;
 using UnityEngine.AI;
 using System.Collections.Generic;
 using System.Linq;
@@ -41,8 +41,8 @@ public class NavMeshMapBaker : MonoBehaviour
     [Header("楼梯线")]
     public float stairLineSpacing = 0.3f;
 
-    [Header("保存路径(相对Assets)")]
-    public string saveFolderPath = "MinimapTextures";
+    // 纹理保存/读取路径由场景名自动决定: Resources/MapTexture/【场景名】
+    // 无需手动配置
 
     [Header("已烘焙数据(运行时使用)")]
     public List<FloorData> floors = new List<FloorData>();
@@ -69,11 +69,72 @@ public class NavMeshMapBaker : MonoBehaviour
     }
 
     /// <summary>
-    /// 运行时检查: 有已烘焙纹理就直接用
+    /// 获取当前场景专属的 Resources 相对路径前缀
+    /// 格式: MapTexture/【场景名】
+    /// </summary>
+    private string GetSceneResourcesFolder()
+    {
+        string sceneName = gameObject.scene.name;
+        return $"MapTexture/{sceneName}";
+    }
+
+    /// <summary>
+    /// 运行时检查: 优先从 Resources 按场景路径加载纹理，没有则需要运行时烘焙
     /// </summary>
     public bool HasBakedData()
     {
-        return floors != null && floors.Count > 0 && floors[0].texture != null;
+        if (floors != null && floors.Count > 0 && floors[0].texture != null)
+            return true;
+
+        // 尝试从 Resources/MapTexture/【场景名】 加载已保存的纹理
+        return TryLoadTexturesFromResources();
+    }
+
+    /// <summary>
+    /// 从 Resources/MapTexture/【场景名】 自动加载所有楼层纹理
+    /// </summary>
+    private bool TryLoadTexturesFromResources()
+    {
+        string folder = GetSceneResourcesFolder();
+
+        // 若 floors 数据结构已存在(含 baseY/minY/maxY)，只补充纹理引用
+        if (floors != null && floors.Count > 0)
+        {
+            bool allLoaded = true;
+            foreach (var floor in floors)
+            {
+                if (floor.texture == null)
+                {
+                    string resPath = $"{folder}/Floor{floor.index}";
+                    floor.texture = Resources.Load<Texture2D>(resPath);
+                    if (floor.texture == null)
+                    {
+                        allLoaded = false;
+                        Debug.LogWarning($"NavMeshMapBaker: 未找到纹理 Resources/{resPath}");
+                    }
+                }
+            }
+            return allLoaded;
+        }
+
+        // floors 为空时，尝试按约定命名依次加载
+        var loaded = new List<FloorData>();
+        for (int i = 0; i < 20; i++) // 最多支持20层
+        {
+            string resPath = $"{folder}/Floor{i}";
+            Texture2D tex = Resources.Load<Texture2D>(resPath);
+            if (tex == null) break;
+            loaded.Add(new FloorData { index = i, texture = tex });
+        }
+
+        if (loaded.Count > 0)
+        {
+            floors = loaded;
+            Debug.Log($"NavMeshMapBaker: 从 Resources/{folder} 加载了 {loaded.Count} 层纹理");
+            return true;
+        }
+
+        return false;
     }
 
     /// <summary>
@@ -192,6 +253,7 @@ public class NavMeshMapBaker : MonoBehaviour
 #if UNITY_EDITOR
     /// <summary>
     /// 编辑器中调用: 烘焙并保存纹理到项目
+    /// 自动存放到 Assets/Resources/MapTexture/【场景名】/Floor{i}.png
     /// </summary>
     public void BakeAndSave()
     {
@@ -200,45 +262,56 @@ public class NavMeshMapBaker : MonoBehaviour
 
     Texture2D SaveTextureAsAsset(Texture2D tex, int floorIndex)
     {
-        string folderPath = $"Assets/{saveFolderPath}";
-
-        if (!AssetDatabase.IsValidFolder(folderPath))
-        {
-            // 逐级创建文件夹
-            string[] parts = saveFolderPath.Split('/');
-            string current = "Assets";
-            foreach (string part in parts)
-            {
-                string next = $"{current}/{part}";
-                if (!AssetDatabase.IsValidFolder(next))
-                    AssetDatabase.CreateFolder(current, part);
-                current = next;
-            }
-        }
-
         string sceneName = gameObject.scene.name;
-        string assetPath = $"{folderPath}/{sceneName}_Floor{floorIndex}.png";
 
-        // 写入PNG
+        // 固定存放到 Resources/MapTexture/【场景名】，运行时可用 Resources.Load 读取
+        string relativePath = $"Resources/MapTexture/{sceneName}";
+        string folderPath   = $"Assets/{relativePath}";
+
+        // 逐级确保文件夹存在
+        EnsureFolderExists(folderPath);
+
+        string assetPath = $"{folderPath}/Floor{floorIndex}.png";
+
+        // 写入 PNG
         byte[] pngData = tex.EncodeToPNG();
         System.IO.File.WriteAllBytes(assetPath, pngData);
         AssetDatabase.ImportAsset(assetPath);
 
-        // 设置导入设置
+        // 设置导入选项(Texture2D，运行时 Resources.Load 使用)
         TextureImporter importer = AssetImporter.GetAtPath(assetPath) as TextureImporter;
         if (importer != null)
         {
-            importer.textureType = TextureImporterType.Sprite;
+            importer.textureType = TextureImporterType.Default;
             importer.npotScale = TextureImporterNPOTScale.None;
             importer.mipmapEnabled = false;
             importer.filterMode = FilterMode.Bilinear;
             importer.textureCompression = TextureImporterCompression.Uncompressed;
+            importer.isReadable = true;
             importer.SaveAndReimport();
         }
 
-        // 返回资产引用(而非内存中的临时纹理)
-        Texture2D saved = AssetDatabase.LoadAssetAtPath<Texture2D>(assetPath);
-        return saved;
+        Debug.Log($"NavMeshMapBaker: 纹理已保存到 {assetPath}");
+
+        // 返回资产引用
+        return AssetDatabase.LoadAssetAtPath<Texture2D>(assetPath);
+    }
+
+    /// <summary>
+    /// 逐级创建 AssetDatabase 文件夹
+    /// </summary>
+    private void EnsureFolderExists(string fullFolderPath)
+    {
+        // fullFolderPath 形如 Assets/Resources/MapTexture/SceneName
+        string[] parts = fullFolderPath.Replace('\\', '/').Split('/');
+        string current = parts[0]; // "Assets"
+        for (int i = 1; i < parts.Length; i++)
+        {
+            string next = $"{current}/{parts[i]}";
+            if (!AssetDatabase.IsValidFolder(next))
+                AssetDatabase.CreateFolder(current, parts[i]);
+            current = next;
+        }
     }
 #endif
 
